@@ -11,14 +11,32 @@ function App() {
   const [error, setError] = useState(null);
   const [usingFallback, setUsingFallback] = useState(false);
 
+  const getRandomMood = () => {
+    const moods = ['happy', 'sad', 'excited', 'tired'];
+    return moods[Math.floor(Math.random() * moods.length)];
+  };
+
+  const getFallbackSuggestions = (mood) => {
+    const fallbackSuggestions = {
+      'happy': ["Go for a walk", "Call a friend", "Listen to your favorite music"],
+      'sad': ["Listen to uplifting music", "Call a friend", "Watch a funny video"],
+      'excited': ["Plan an adventure", "Try something new", "Share your excitement with someone"],
+      'tired': ["Take a short nap", "Drink some water", "Do some light stretching"]
+    };
+    return fallbackSuggestions[mood] || ["Try taking a break", "Drink some water"];
+  };
+
   const fetchMoodAndSuggest = async () => {
     setIsLoading(true);
     setError(null);
     setMood('');
     setSuggestions([]);
+    setUsingFallback(false);
+    
+    let currentMood = '';
     
     try {
-      // Fetch mood
+      // Try to fetch mood from the API
       console.log('Fetching mood from:', MOOD_API_URL);
       const moodResponse = await fetch(MOOD_API_URL, {
         method: 'GET',
@@ -39,55 +57,54 @@ function App() {
         throw new Error(moodData.message || 'Failed to get mood');
       }
       
-      const currentMood = moodData.mood;
+      currentMood = moodData.mood;
       setMood(currentMood);
       
-      // Fetch suggestions
+    } catch (moodError) {
+      console.error('Failed to fetch mood, using fallback:', moodError);
+      currentMood = getRandomMood();
+      setMood(currentMood);
+      setUsingFallback(true);
+      setError('Mood service is currently unavailable. Using fallback mood and suggestions.');
+    }
+    
+    // Whether we got the mood from the API or fallback, try to get suggestions
+    try {
       const suggestionsUrl = `${SUGGESTION_API_URL}/${encodeURIComponent(currentMood)}`;
       console.log('Fetching suggestions from:', suggestionsUrl);
       
-      try {
-        const suggestionsResponse = await fetch(suggestionsUrl, {
-          method: 'GET',
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-          },
-        });
-        
-        if (!suggestionsResponse.ok) {
-          throw new Error(`Suggestions API error: ${suggestionsResponse.status} ${suggestionsResponse.statusText}`);
-        }
-        
-        const suggestionsData = await suggestionsResponse.json();
-        console.log('Suggestions API response:', suggestionsData);
-        
-        if (suggestionsData.status !== 'success') {
-          throw new Error(suggestionsData.message || 'Failed to get suggestions');
-        }
-        
-        setSuggestions(Array.isArray(suggestionsData.suggestions) ? suggestionsData.suggestions : []);
-      } catch (suggestionsError) {
-        console.error('Failed to fetch suggestions, using fallback:', suggestionsError);
-        // Fallback suggestions based on mood
-        const fallbackSuggestions = {
-          'happy': ["Go for a walk", "Call a friend", "Listen to your favorite music"],
-          'sad': ["Listen to uplifting music", "Call a friend", "Watch a funny video"],
-          'excited': ["Plan an adventure", "Try something new", "Share your excitement with someone"],
-          'tired': ["Take a short nap", "Drink some water", "Do some light stretching"]
-        };
-        
-        setSuggestions(fallbackSuggestions[currentMood] || ["Try taking a break", "Drink some water"]);
-        setUsingFallback(true);
-        setError('Suggestions service is currently unavailable. Showing fallback suggestions.');
+      const suggestionsResponse = await fetch(suggestionsUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!suggestionsResponse.ok) {
+        throw new Error(`Suggestions API error: ${suggestionsResponse.status} ${suggestionsResponse.statusText}`);
       }
       
-    } catch (err) {
-      console.error('Error:', err);
-      setError(err.message || 'An error occurred while fetching data');
-    } finally {
-      setIsLoading(false);
+      const suggestionsData = await suggestionsResponse.json();
+      console.log('Suggestions API response:', suggestionsData);
+      
+      if (suggestionsData.status !== 'success') {
+        throw new Error(suggestionsData.message || 'Failed to get suggestions');
+      }
+      
+      setSuggestions(Array.isArray(suggestionsData.suggestions) ? suggestionsData.suggestions : []);
+    } catch (suggestionsError) {
+      console.error('Failed to fetch suggestions, using fallback:', suggestionsError);
+      setSuggestions(getFallbackSuggestions(currentMood));
+      setUsingFallback(true);
+      setError(prevError => 
+        prevError 
+          ? 'Both mood and suggestions services are unavailable. Using fallback data.'
+          : 'Suggestions service is currently unavailable. Using fallback suggestions.'
+      );
     }
+    
+    setIsLoading(false);
   };
 
   return (
