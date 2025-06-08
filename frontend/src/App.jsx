@@ -9,6 +9,7 @@ function App() {
   const [suggestions, setSuggestions] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [usingFallback, setUsingFallback] = useState(false);
 
   const fetchMoodAndSuggest = async () => {
     setIsLoading(true);
@@ -45,26 +46,41 @@ function App() {
       const suggestionsUrl = `${SUGGESTION_API_URL}/${encodeURIComponent(currentMood)}`;
       console.log('Fetching suggestions from:', suggestionsUrl);
       
-      const suggestionsResponse = await fetch(suggestionsUrl, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-      });
-      
-      if (!suggestionsResponse.ok) {
-        throw new Error(`Suggestions API error: ${suggestionsResponse.status} ${suggestionsResponse.statusText}`);
+      try {
+        const suggestionsResponse = await fetch(suggestionsUrl, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        if (!suggestionsResponse.ok) {
+          throw new Error(`Suggestions API error: ${suggestionsResponse.status} ${suggestionsResponse.statusText}`);
+        }
+        
+        const suggestionsData = await suggestionsResponse.json();
+        console.log('Suggestions API response:', suggestionsData);
+        
+        if (suggestionsData.status !== 'success') {
+          throw new Error(suggestionsData.message || 'Failed to get suggestions');
+        }
+        
+        setSuggestions(Array.isArray(suggestionsData.suggestions) ? suggestionsData.suggestions : []);
+      } catch (suggestionsError) {
+        console.error('Failed to fetch suggestions, using fallback:', suggestionsError);
+        // Fallback suggestions based on mood
+        const fallbackSuggestions = {
+          'happy': ["Go for a walk", "Call a friend", "Listen to your favorite music"],
+          'sad': ["Listen to uplifting music", "Call a friend", "Watch a funny video"],
+          'excited': ["Plan an adventure", "Try something new", "Share your excitement with someone"],
+          'tired': ["Take a short nap", "Drink some water", "Do some light stretching"]
+        };
+        
+        setSuggestions(fallbackSuggestions[currentMood] || ["Try taking a break", "Drink some water"]);
+        setUsingFallback(true);
+        setError('Suggestions service is currently unavailable. Showing fallback suggestions.');
       }
-      
-      const suggestionsData = await suggestionsResponse.json();
-      console.log('Suggestions API response:', suggestionsData);
-      
-      if (suggestionsData.status !== 'success') {
-        throw new Error(suggestionsData.message || 'Failed to get suggestions');
-      }
-      
-      setSuggestions(Array.isArray(suggestionsData.suggestions) ? suggestionsData.suggestions : []);
       
     } catch (err) {
       console.error('Error:', err);
@@ -107,7 +123,19 @@ function App() {
       
       {suggestions.length > 0 && (
         <div style={{ margin: '20px auto', maxWidth: '500px', textAlign: 'left' }}>
-          <h3>Suggested Activities:</h3>
+          <h3>
+            {usingFallback ? 'Fallback ' : ''}Suggested Activities:
+            {usingFallback && (
+              <span style={{
+                fontSize: '0.8em',
+                color: '#ff9800',
+                marginLeft: '10px',
+                fontWeight: 'normal'
+              }}>
+                (Offline Mode)
+              </span>
+            )}
+          </h3>
           <ul style={{ listStyleType: 'none', padding: 0 }}>
             {suggestions.map((suggestion, i) => (
               <li 
