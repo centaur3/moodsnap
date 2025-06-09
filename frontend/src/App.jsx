@@ -1,39 +1,55 @@
 import { useState } from 'react';
 
-// API endpoints
+// API endpoints - with offline fallback
 const MOOD_API_URL = 'https://moodsnap-mood.onrender.com/mood';
 const SUGGESTION_API_URL = 'https://moodsnap-suggestion.onrender.com/suggest';
+
+// Offline data
+const OFFLINE_MOODS = ['happy', 'sad', 'excited', 'tired'];
+const OFFLINE_SUGGESTIONS = {
+  'happy': ["Go for a walk", "Call a friend", "Listen to your favorite music"],
+  'sad': ["Listen to uplifting music", "Call a friend", "Watch a funny video"],
+  'excited': ["Plan an adventure", "Try something new", "Share your excitement with someone"],
+  'tired': ["Take a short nap", "Drink some water", "Do some light stretching"]
+};
 
 function App() {
   const [mood, setMood] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [usingFallback, setUsingFallback] = useState(false);
+  const [isOnline, setIsOnline] = useState(false);
+  const [showOfflineMode, setShowOfflineMode] = useState(false);
 
   const getRandomMood = () => {
-    const moods = ['happy', 'sad', 'excited', 'tired'];
-    return moods[Math.floor(Math.random() * moods.length)];
+    return OFFLINE_MOODS[Math.floor(Math.random() * OFFLINE_MOODS.length)];
   };
 
-  const getFallbackSuggestions = (mood) => {
-    const fallbackSuggestions = {
-      'happy': ["Go for a walk", "Call a friend", "Listen to your favorite music"],
-      'sad': ["Listen to uplifting music", "Call a friend", "Watch a funny video"],
-      'excited': ["Plan an adventure", "Try something new", "Share your excitement with someone"],
-      'tired': ["Take a short nap", "Drink some water", "Do some light stretching"]
-    };
-    return fallbackSuggestions[mood] || ["Try taking a break", "Drink some water"];
+  const getOfflineSuggestions = (mood) => {
+    return OFFLINE_SUGGESTIONS[mood] || ["Try taking a break", "Drink some water"];
+  };
+  
+  const useOfflineMode = () => {
+    const randomMood = getRandomMood();
+    setMood(randomMood);
+    setSuggestions(getOfflineSuggestions(randomMood));
+    setError('Using offline mode. Try online services when available.');
+    setShowOfflineMode(false);
   };
 
   const fetchMoodAndSuggest = async () => {
+    if (!isOnline) {
+      useOfflineMode();
+      return;
+    }
+    
     setIsLoading(true);
     setError(null);
     setMood('');
     setSuggestions([]);
-    setUsingFallback(false);
     
     let currentMood = '';
+    let onlineSuccess = false;
     
     try {
       // Try to fetch mood from the API
@@ -59,17 +75,9 @@ function App() {
       
       currentMood = moodData.mood;
       setMood(currentMood);
+      onlineSuccess = true;
       
-    } catch (moodError) {
-      console.error('Failed to fetch mood, using fallback:', moodError);
-      currentMood = getRandomMood();
-      setMood(currentMood);
-      setUsingFallback(true);
-      setError('Mood service is currently unavailable. Using fallback mood and suggestions.');
-    }
-    
-    // Whether we got the mood from the API or fallback, try to get suggestions
-    try {
+      // Try to fetch suggestions
       const suggestionsUrl = `${SUGGESTION_API_URL}/${encodeURIComponent(currentMood)}`;
       console.log('Fetching suggestions from:', suggestionsUrl);
       
@@ -93,23 +101,55 @@ function App() {
       }
       
       setSuggestions(Array.isArray(suggestionsData.suggestions) ? suggestionsData.suggestions : []);
-    } catch (suggestionsError) {
-      console.error('Failed to fetch suggestions, using fallback:', suggestionsError);
-      setSuggestions(getFallbackSuggestions(currentMood));
-      setUsingFallback(true);
-      setError(prevError => 
-        prevError 
-          ? 'Both mood and suggestions services are unavailable. Using fallback data.'
-          : 'Suggestions service is currently unavailable. Using fallback suggestions.'
-      );
+      setError(null);
+      
+    } catch (error) {
+      console.error('Error:', error);
+      if (!onlineSuccess) {
+        // If we couldn't connect to the mood service, use offline mode
+        setShowOfflineMode(true);
+      } else {
+        // If we got the mood but not suggestions, use offline suggestions
+        setSuggestions(getOfflineSuggestions(currentMood));
+        setError('Suggestions service is unavailable. Using offline suggestions.');
+      }
+    } finally {
+      setIsLoading(false);
     }
-    
-    setIsLoading(false);
+  };
+
+  // Toggle between online and offline mode
+  const toggleOnlineMode = () => {
+    const newMode = !isOnline;
+    setIsOnline(newMode);
+    if (newMode) {
+      setError('Online mode enabled. Try fetching mood and suggestions.');
+    } else {
+      useOfflineMode();
+    }
   };
 
   return (
     <div style={{textAlign: 'center', marginTop: '4rem', padding: '20px'}}>
       <h1>MoodSnap</h1>
+      <div style={{ marginBottom: '20px' }}>
+        <button 
+          onClick={toggleOnlineMode}
+          style={{
+            padding: '8px 16px',
+            margin: '0 10px 20px 0',
+            fontSize: '14px',
+            backgroundColor: isOnline ? '#4CAF50' : '#f44336',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer'
+          }}
+        >
+          {isOnline ? 'Online Mode' : 'Offline Mode'}
+        </button>
+      </div>
+      
       <button 
         onClick={fetchMoodAndSuggest}
         disabled={isLoading}
@@ -121,14 +161,67 @@ function App() {
           color: 'white',
           border: 'none',
           borderRadius: '4px',
+          marginBottom: '20px'
         }}
       >
-        {isLoading ? 'Loading...' : 'Snap Mood & Activity'}
+        {isLoading ? 'Loading...' : isOnline ? 'Snap Mood & Activity (Online)' : 'Get Random Mood & Activities (Offline)'}
       </button>
       
-      {error && (
-        <div style={{ color: 'red', margin: '20px 0', padding: '10px', backgroundColor: '#ffeeee', borderRadius: '4px' }}>
-          Error: {error}
+      {showOfflineMode && (
+        <div style={{ 
+          margin: '20px auto', 
+          maxWidth: '500px',
+          padding: '15px',
+          backgroundColor: '#fff3e0',
+          borderLeft: '4px solid #ff9800',
+          textAlign: 'left',
+          borderRadius: '4px'
+        }}>
+          <h3>Unable to connect to online services</h3>
+          <p>Would you like to use offline mode instead?</p>
+          <button 
+            onClick={useOfflineMode}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#ff9800',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              marginRight: '10px'
+            }}
+          >
+            Use Offline Mode
+          </button>
+          <button 
+            onClick={() => setShowOfflineMode(false)}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#f5f5f5',
+              border: '1px solid #ddd',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+          >
+            Try Again
+          </button>
+        </div>
+      )}
+      
+      {error && !showOfflineMode && (
+        <div style={{ 
+          color: '#d32f2f', 
+          margin: '20px 0', 
+          padding: '15px', 
+          backgroundColor: '#ffebee', 
+          borderRadius: '4px',
+          borderLeft: '4px solid #f44336',
+          maxWidth: '500px',
+          marginLeft: 'auto',
+          marginRight: 'auto',
+          textAlign: 'left'
+        }}>
+          {error}
         </div>
       )}
       
@@ -141,8 +234,8 @@ function App() {
       {suggestions.length > 0 && (
         <div style={{ margin: '20px auto', maxWidth: '500px', textAlign: 'left' }}>
           <h3>
-            {usingFallback ? 'Fallback ' : ''}Suggested Activities:
-            {usingFallback && (
+            {!isOnline ? 'Offline ' : ''}Suggested Activities:
+            {!isOnline && (
               <span style={{
                 fontSize: '0.8em',
                 color: '#ff9800',
